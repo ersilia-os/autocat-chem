@@ -6,6 +6,8 @@ This package provides automated machine learning catboost surrogate models for m
 
 Works on regression, single task or multitask.
 
+NB - input .csv files expected to have a header row
+
 ## Fit/Save
 
 Python:
