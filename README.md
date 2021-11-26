@@ -1,2 +1,29 @@
-# autocat-chem
-Automatic training of (multioutput) regression models for chemistry
+# Automated surrogate model building with catboost for chemistry datasets.
+
+**WORK IN PROGRESS**
+
+This package provides automated machine learning catboost surrogate models for multi-output chemistry datasets.
+
+Works on regression, single task or multitask.
+
+## Fit/Save
+
+Python:
+
+Morgan fingerprints:
+auto = AutoCat()
+auto.fit("chembl_100k_predictions.csv")
+
+Molbert fingerprint reference library and optional training params:
+auto = AutoCat(reference_lib="reference.h5")
+auto.fit("chembl_100k_predictions.csv", optimise_time=1200, weight=True)
+
+auto.save("chembl_45k_molbert_predictions.cbm")
+
+## Predict
+
+Python:
+
+auto = AutoCat() #Or with molbert library: auto = AutoCat(reference_lib="reference.h5")
+
+preds = auto.predict(smiles.csv)
