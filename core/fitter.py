@@ -15,12 +15,10 @@ BATCH_ITERATIONS = 3
 HIST_BINS = 100
 
 class AutoCatFitter(AutoCatTrain):
-    def __init__(self, smiles, targets, scaler, features_file=None, batch=False, data_r=None, batch_size=0, data_len=0):
+    def __init__(self, scaler, features_file=None, batch=False, data_r=None, batch_size=0, data_len=0):
         AutoCatTrain.__init__(self)
         self.scaler = scaler
         self.features_file = features_file
-        self.X = self.featurizer.featurize(smiles, features_file=self.features_file)
-        self.y = self.scaler.scale_data(targets)
 
         self.do_batching = batch
         self.batch_size = batch_size
@@ -30,8 +28,12 @@ class AutoCatFitter(AutoCatTrain):
 
         self.weighting = False
 
-        self.train_params(self.y)
         self.optuna_params = {}
+
+    def initialise_data(self, smiles, targets):
+        self.X = self.featurizer.featurize(smiles, features_file=self.features_file)
+        self.y = self.scaler.scale_data(targets)
+        self.train_params(self.y)
 
     def weight_labels(self):
         self.hist_weights = np.zeros((self.y.shape[1], HIST_BINS))
@@ -47,27 +49,30 @@ class AutoCatFitter(AutoCatTrain):
 
     def optimise_search(self, time_budget=3600):
         if self.weighting:
-            self.opt = Optimizer(self.X, self.y, hist_weights=self.hist_weights, bins=self.hist_bins)
+            self.opt = Optimizer(self.X, self.y, hist_weights=self.hist_weights, bins=self.hist_bins, reference_lib=self.features_file)
         else:
-            self.opt = Optimizer(self.X, self.y)
+            self.opt = Optimizer(self.X, self.y, reference_lib=self.features_file)
         self.optuna_params = self.opt.param_search(time_budget)
 
-    def fit(self):
+    def fit(self, retrain=None):
         if self.do_batching:
-            self.fit_model(self.X, self.y)
-            self.save_model("temp.cbm", "cbm")
             print("Training final model on fold 0 and iteration 0.")
+            if retrain is not None:
+                self.fit_model(self.X, self.y, init_model=retrain)
+            else:
+                self.fit_model(self.X, self.y)
+            self.save_model("temp.cbm", "cbm")
 
             fold = 1
             for i in range(self.batch_iter):
                 for f in range(fold, self.data_len // self.batch_size):
+                    print("Training final model on fold", int(f), "and iteration", int(i))
                     smiles, targets = self.data_r.get_fold(f, self.batch_size)
                     del self.X
                     del self.y
                     self.X = self.featurizer.featurize(smiles, features_file=self.features_file)
                     self.y = self.scaler.scale_data(targets)
 
-                    print("Training final model on fold", int(f), "and iteration", int(i))
                     self.fit_model(self.X, self.y, init_model="temp.cbm")
                     self.save_model("temp.cbm", "cbm")
 
@@ -124,7 +129,7 @@ class AutoCatFitter(AutoCatTrain):
             "r2_test": r2_score(y_test, preds_test)
         }
 
-    def save_model(self, file_path, format):
+    def save_model(self, file_path, format): #TO DO: Save & load training params. Change learning rate for retrain?
         if format == "onnx":
             self.model.save_model(file_path, format=format, export_parameters={
                 'onnx_domain': 'ai.catboost',
@@ -155,6 +160,14 @@ class AutoCatFitter(AutoCatTrain):
             }
             with open(file_path, "w") as f:
                 json.dump(output, f)
+
+    def load_weights(self, file_path):
+        if os.path.exists(file_path):
+            with open(file_path, "r") as f:
+                json_data = json.load(f)
+            self.hist_weights = np.array(json_data["histogram_weights"], dtype=np.float32)
+            self.hist_bins = np.array(json_data["histogram_bins"], dtype=np.float32)
+            self.weighting = True
 
     def get_model(self):
         return self.model
