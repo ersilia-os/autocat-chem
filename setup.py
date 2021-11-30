@@ -27,8 +27,6 @@ setup(
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
     keywords="catboost machine-learning chemistry computer-aided-drug-design",
-    project_urls={
-        "Source Code": "https://github.com/ersilia-os/autocat-chem",
-    },
+    project_urls={"Source Code": "https://github.com/ersilia-os/autocat-chem",},
     include_package_data=True,
 )

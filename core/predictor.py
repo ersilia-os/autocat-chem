@@ -3,6 +3,7 @@ from catboost import CatBoostRegressor
 import onnxruntime
 import numpy as np
 
+
 class AutoCatPredictor(AutoCatBase):
     def __init__(self, features_file=None):
         AutoCatBase.__init__(self)

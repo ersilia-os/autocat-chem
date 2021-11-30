@@ -2,6 +2,7 @@ import csv
 import numpy as np
 import random
 
+
 class DataReader(object):
     def __init__(self, input_file):
         self.file_name = input_file
@@ -12,7 +13,7 @@ class DataReader(object):
 
     def get_num_lines(self):
         with open(self.file_name) as f:
-            csv_reader = csv.reader(f, delimiter=',')
+            csv_reader = csv.reader(f, delimiter=",")
             header = next(csv_reader)
             sum = 0
             for i in csv_reader:
@@ -27,12 +28,12 @@ class DataReader(object):
         smiles, target = [], []
 
         with open(self.file_name) as f:
-            csv_reader = csv.reader(f, delimiter=',')
+            csv_reader = csv.reader(f, delimiter=",")
             if fold_num == 0:
                 header = next(csv_reader)
 
             low = fold_num * batch_size
-            high = (fold_num+1) * batch_size
+            high = (fold_num + 1) * batch_size
             for i, row in enumerate(csv_reader):
                 if i >= low and i < high:
                     smiles.append(row[0])
@@ -50,7 +51,7 @@ class DataReader(object):
         smiles = []
 
         with open(self.file_name) as f:
-            csv_reader = csv.reader(f, delimiter=',')
+            csv_reader = csv.reader(f, delimiter=",")
             header = next(csv_reader)
             for row in csv_reader:
                 smiles.append(row[smiles_col])

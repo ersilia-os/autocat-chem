@@ -2,9 +2,9 @@ from .fitter import AutoCatFitter
 from .predictor import AutoCatPredictor
 from .file_io import DataReader
 from .scaler import Scaler
+from .defaults import BATCH_SIZE
 import numpy as np
 
-BATCH_SIZE = 100000
 
 class AutoCat(object):
     def __init__(self, reference_lib=None):
@@ -15,7 +15,9 @@ class AutoCat(object):
         self.batch_size = BATCH_SIZE
         self.reference_lib = reference_lib
 
-    def fit(self, data, optimise_time=3600, weight=False): #if file, expected to have header row
+    def fit(
+        self, data, optimise_time=3600, weight=False
+    ):  # if file, expected to have header row
         smiles, targets = self.check_input(data)
 
         self.scaler.get_params(targets)
@@ -23,8 +25,14 @@ class AutoCat(object):
         if self.data_r == "" or self.data_len <= self.batch_size:
             self.fitter = AutoCatFitter(self.scaler, features_file=self.reference_lib)
         else:
-            self.fitter = AutoCatFitter(self.scaler, features_file=self.reference_lib, batch=True, data_r=self.data_r,
-                                        batch_size=self.batch_size, data_len=self.data_len)
+            self.fitter = AutoCatFitter(
+                self.scaler,
+                features_file=self.reference_lib,
+                batch=True,
+                data_r=self.data_r,
+                batch_size=self.batch_size,
+                data_len=self.data_len,
+            )
         self.fitter.initialise_data(smiles, targets)
 
         if weight:
@@ -43,7 +51,7 @@ class AutoCat(object):
             data_r = DataReader(data)
             smiles = data_r.read_smiles(smiles_col=smiles_col)
 
-        if self.metrics != {}: #If there is a fitter trained in this AutoCat object
+        if self.metrics != {}:  # If there is a fitter trained in this AutoCat object
             self.predictor = AutoCatPredictor(features_file=self.reference_lib)
             self.predictor.set_model(self.fitter.get_model())
 
@@ -78,8 +86,14 @@ class AutoCat(object):
         if self.data_r == "" or self.data_len <= self.batch_size:
             self.fitter = AutoCatFitter(self.scaler, features_file=self.reference_lib)
         else:
-            self.fitter = AutoCatFitter(self.scaler, features_file=self.reference_lib, batch=True, data_r=self.data_r,
-                                        batch_size=self.batch_size, data_len=self.data_len)
+            self.fitter = AutoCatFitter(
+                self.scaler,
+                features_file=self.reference_lib,
+                batch=True,
+                data_r=self.data_r,
+                batch_size=self.batch_size,
+                data_len=self.data_len,
+            )
         self.fitter.initialise_data(smiles, targets)
         self.fitter.load_weights(file_name[0] + "_weights.json")
 
@@ -100,5 +114,8 @@ class AutoCat(object):
             else:
                 smiles, targets = self.data_r.get_fold(0, self.batch_size)
                 if self.data_len % self.batch_size != 0:
-                    print("Warning - training dataset is not a multiple of batch size:", self.batch_size)
+                    print(
+                        "Warning - training dataset is not a multiple of batch size:",
+                        self.batch_size,
+                    )
         return smiles, targets
