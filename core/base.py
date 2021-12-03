@@ -15,7 +15,6 @@ class AutoCatTrain(AutoCatBase):
     def __init__(self):
         AutoCatBase.__init__(self)
         self.train_test_split = TRAIN_TEST_SPLIT
-        self.training_params = {}
         self.device = self.find_GPUs()
 
     def find_GPUs(self):
@@ -25,15 +24,17 @@ class AutoCatTrain(AutoCatBase):
         return "CPU"
 
     def train_params(self, labels):
+        training_params = {}
         if labels.shape[1] > 1:
-            self.training_params["loss_function"] = "MultiRMSE"
-            self.training_params["eval_metric"] = "MultiRMSE"
-            self.device = "CPU"
+            training_params["loss_function"] = "MultiRMSE"
+            training_params["eval_metric"] = "MultiRMSE"
+            training_params["task_type"] = "CPU"
         else:
-            self.training_params["loss_function"] = "RMSE"
-            self.training_params["eval_metric"] = "RMSE"
+            training_params["loss_function"] = "RMSE"
+            training_params["eval_metric"] = "RMSE"
 
-        self.training_params["task_type"] = self.device
+        training_params["task_type"] = self.device
+        return training_params
 
     def get_weights(self, data, hist_weights, bins, bin_range=[0, HIST_BINS - 1]):
         weights = np.zeros((data.shape[1], data.shape[0]))
@@ -53,8 +54,4 @@ class AutoCatTrain(AutoCatBase):
         return weights_avg
 
     def weight_function(self, bin_weight, bin_pos):
-        #res = bin_pos / HIST_BINS - 1
-        #if res == 0:
-        #    return 0.1
-        #return res
         return 1 - bin_weight

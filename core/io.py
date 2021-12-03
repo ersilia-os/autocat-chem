@@ -3,6 +3,7 @@ from .predictor import AutoCatPredictor
 from .file_io import DataReader
 from .scaler import Scaler
 from .defaults import BATCH_SIZE
+from .base import AutoCatTrain
 import numpy as np
 
 
@@ -19,29 +20,33 @@ class AutoCat(object):
         self, data, optimise_time=3600, weight=False
     ):  # if file, expected to have header row
         smiles, targets = self.check_input(data)
-
         self.scaler.get_params(targets)
+        training_params = AutoCatTrain().train_params(targets)
 
         if self.data_r == "" or self.data_len <= self.batch_size:
-            self.fitter = AutoCatFitter(self.scaler, features_file=self.reference_lib)
+            self.fitter = AutoCatFitter(
+                self.scaler,
+                training_params=training_params,
+                features_file=self.reference_lib,
+            )
         else:
             self.fitter = AutoCatFitter(
                 self.scaler,
+                training_params=training_params,
                 features_file=self.reference_lib,
                 batch=True,
                 data_r=self.data_r,
                 batch_size=self.batch_size,
                 data_len=self.data_len,
             )
-        self.fitter.initialise_data(smiles, targets)
 
         if weight:
-            self.fitter.weight_labels()
+            self.fitter.weight_labels(targets)
 
         if optimise_time > 0:
-            self.fitter.optimise_search(time_budget=optimise_time)
+            self.fitter.optimise_search(smiles, targets, time_budget=optimise_time)
 
-        self.metrics = self.fitter.fit()
+        self.metrics = self.fitter.fit(smiles, targets)
         return self.metrics
 
     def predict(self, data, smiles_col=0):
@@ -82,22 +87,27 @@ class AutoCat(object):
         file_name = model_path.split(".")
         self.scaler.load(file_name[0] + "_scaler.json")
         smiles, targets = self.check_input(data)
+        training_params = AutoCatTrain.train_params(targets)
 
         if self.data_r == "" or self.data_len <= self.batch_size:
-            self.fitter = AutoCatFitter(self.scaler, features_file=self.reference_lib)
+            self.fitter = AutoCatFitter(
+                self.scaler,
+                training_params=training_params,
+                features_file=self.reference_lib,
+            )
         else:
             self.fitter = AutoCatFitter(
                 self.scaler,
+                training_params=training_params,
                 features_file=self.reference_lib,
                 batch=True,
                 data_r=self.data_r,
                 batch_size=self.batch_size,
                 data_len=self.data_len,
             )
-        self.fitter.initialise_data(smiles, targets)
         self.fitter.load_weights(file_name[0] + "_weights.json")
 
-        self.metrics = self.fitter.fit(retrain=model_path)
+        self.metrics = self.fitter.fit(smiles, targets, retrain=model_path)
         return self.metrics
 
     def check_input(self, data):

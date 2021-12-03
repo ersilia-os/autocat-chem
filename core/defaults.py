@@ -7,3 +7,4 @@ HIST_BINS = 100  # Weights
 CLIP_BOUNDS = [-10, 10]  # Scaler clipping
 NBITS = 2048  # Morgan fps
 RADIUS = 3
+LOG_PATH = "catboost_training.log"

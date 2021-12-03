@@ -3,11 +3,12 @@ from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.preprocessing import MinMaxScaler
 import numpy as np
 import catboost
-from catboost import Pool, CatBoostRegressor
-from .defaults import BATCH_ITERATIONS, HIST_BINS
+from catboost import Pool, CatBoostRegressor, sum_models
+from .defaults import BATCH_ITERATIONS, HIST_BINS, LOG_PATH
 import json
 import sys
 import os
+import random
 
 from .base import AutoCatTrain
 from .param_optimizer import Optimizer
@@ -22,6 +23,7 @@ class AutoCatFitter(AutoCatTrain):
         data_r=None,
         batch_size=0,
         data_len=0,
+        training_params={},
     ):
         AutoCatTrain.__init__(self)
         self.scaler = scaler
@@ -35,21 +37,16 @@ class AutoCatFitter(AutoCatTrain):
 
         self.weighting = False
 
+        self.training_params = training_params
         self.optuna_params = {}
 
-    def initialise_data(self, smiles, targets):
-        self.X = self.featurizer.featurize(smiles, features_file=self.features_file)
-        self.y = self.scaler.scale_data(targets)
-        self.train_params(self.y)
+    def weight_labels(self, targets):
+        y = self.scaler.scale_data(targets)
+        self.hist_weights = np.zeros((y.shape[1], HIST_BINS))
+        self.hist_bins = np.zeros((y.shape[1], HIST_BINS + 1))
 
-    def weight_labels(self):
-        self.hist_weights = np.zeros((self.y.shape[1], HIST_BINS))
-        self.hist_bins = np.zeros((self.y.shape[1], HIST_BINS + 1))
-
-        for col in range(self.y.shape[1]):
-            weights_col, bin_col = np.histogram(
-                self.y[:, col], bins=HIST_BINS, density=True
-            )
+        for col in range(y.shape[1]):
+            weights_col, bin_col = np.histogram(y[:, col], bins=HIST_BINS, density=True)
             minmaxscaler = MinMaxScaler()
             weights_scaled = minmaxscaler.fit_transform(
                 weights_col.reshape((HIST_BINS, 1))
@@ -58,59 +55,92 @@ class AutoCatFitter(AutoCatTrain):
             self.hist_bins[col] = bin_col
         self.weighting = True
 
-    def optimise_search(self, time_budget=3600):
+    def optimise_search(self, smiles, targets, time_budget=3600):
+        X = self.featurizer.featurize(smiles, features_file=self.features_file)
+        y = self.scaler.scale_data(targets)
+
         if self.weighting:
             self.opt = Optimizer(
-                self.X,
-                self.y,
+                X,
+                y,
                 hist_weights=self.hist_weights,
                 bins=self.hist_bins,
                 reference_lib=self.features_file,
+                featurizer=self.featurizer,
             )
         else:
-            self.opt = Optimizer(self.X, self.y, reference_lib=self.features_file)
+            self.opt = Optimizer(
+                X, y, reference_lib=self.features_file, featurizer=self.featurizer
+            )
         self.optuna_params = self.opt.param_search(time_budget)
 
-    def fit(self, retrain=None):
-        if self.do_batching:
-            print("Training final model on fold 0 and iteration 0.")
-            if retrain is not None:
-                self.fit_model(self.X, self.y, init_model=retrain)
-            else:
-                self.fit_model(self.X, self.y)
-            self.save_model("temp.cbm", "cbm")
+    def fit(self, smiles_inp, targets_inp, retrain=None):
+        with open(LOG_PATH, "w") as f:
+            pass  # Flush log file for new training run
 
-            fold = 1
+        if self.do_batching:
+            models = []
             for i in range(self.batch_iter):
-                for f in range(fold, self.data_len // self.batch_size):
+                seed = random.randint(0, 10000)
+                for f in range(self.data_len // self.batch_size):
                     print(
                         "Training final model on fold", int(f), "and iteration", int(i)
                     )
                     smiles, targets = self.data_r.get_fold(f, self.batch_size)
-                    del self.X
-                    del self.y
-                    self.X = self.featurizer.featurize(
+                    X = self.featurizer.featurize(
                         smiles, features_file=self.features_file
                     )
-                    self.y = self.scaler.scale_data(targets)
+                    y = self.scaler.scale_data(targets)
 
-                    self.fit_model(self.X, self.y, init_model="temp.cbm")
-                    self.save_model("temp.cbm", "cbm")
+                    init_model = retrain
+                    if i > 0:
+                        init_model = "temp.cbm"
+                    # if i > 0 then try load model and call fit()?
+                    # Or check baseline load/set??? skeptical
+                    models.append(
+                        self.fit_model(X, y, init_model=init_model, seed=seed)
+                    )
+
+                model_avg = sum_models(
+                    models, weights=[1.0 / len(models)] * len(models)
+                )
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=seed
+                )
+                self.metrics = self.model_metrics(
+                    model_avg, X_train, X_test, y_train, y_test
+                )
+                self.model = model_avg
+                self.save_model("temp.cbm", "cbm")
 
                 if i != self.batch_iter - 1:
                     self.save_model("chkpt_iteration_" + str(i) + ".cbm", "cbm")
                     self.save_metrics("chkpt_iteration" + str(i) + "_metrics.json")
                     self.scaler.save("chkpt_iteration" + str(i) + "_scaler.json")
-                fold = 0
+
             os.remove("temp.cbm")
             return self.metrics
 
         else:
             print("Training final model.")
-            return self.fit_model(self.X, self.y)
+            X = self.featurizer.featurize(smiles_inp, features_file=self.features_file)
+            y = self.scaler.scale_data(targets_inp)
+            seed = random.randint(0, 10000)
 
-    def fit_model(self, X, y, init_model=None, log_path=""):
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+            self.model = self.fit_model(X, y, seed=seed)
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=seed
+            )
+            self.metrics = self.model_metrics(
+                self.model, X_train, X_test, y_train, y_test
+            )
+
+    def fit_model(
+        self, X, y, init_model=None, log_path="", seed=random.randint(0, 10000)
+    ):
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=seed
+        )
         if self.weighting:
             weights_y_train = self.get_weights(
                 y_train, self.hist_weights, self.hist_bins
@@ -127,36 +157,33 @@ class AutoCatFitter(AutoCatTrain):
             params.update(self.optuna_params)
 
         if log_path == "":
-            log_path = "catboost_training" + ".log"
+            log_path = LOG_PATH
 
-        file_mode = "w"
         if init_model is not None:
             params["task_type"] = "CPU"
-            file_mode = "a"
 
-        self.model = CatBoostRegressor(**params)
-        with open(log_path, file_mode) as f:
-            self.model.fit(
+        model = CatBoostRegressor(**params)
+        with open(log_path, "a") as f:
+            model.fit(
                 dtrain,
                 eval_set=dtest,
                 early_stopping_rounds=100,
                 log_cout=f,
                 init_model=init_model,
             )
+        return model
 
-        self.model_metrics(X_train, X_test, y_train, y_test)
-        return self.metrics
+    def model_metrics(self, model, X_train, X_test, y_train, y_test):
+        preds_train = model.predict(X_train)
+        preds_test = model.predict(X_test)
 
-    def model_metrics(self, X_train, X_test, y_train, y_test):
-        preds_train = self.model.predict(X_train)
-        preds_test = self.model.predict(X_test)
-
-        self.metrics = {
+        metrics = {
             "MAE_train": mean_squared_error(y_train, preds_train),
             "MAE_test": mean_squared_error(y_test, preds_test),
             "r2_train": r2_score(y_train, preds_train),
             "r2_test": r2_score(y_test, preds_test),
         }
+        return metrics
 
     def save_model(
         self, file_path, format

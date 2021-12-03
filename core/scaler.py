@@ -13,7 +13,8 @@ class Scaler(object):
         self.means = np.nanmean(data_arr, axis=0)
         self.std_devs = np.nanstd(data_arr, axis=0)
 
-    def scale_data(self, data_arr):
+    def scale_data(self, inp_arr):
+        data_arr = inp_arr.copy()
         means = np.nanmean(data_arr, axis=0)
         for col in range(data_arr.shape[1]):
             for row in range(data_arr.shape[0]):

@@ -10,21 +10,25 @@ from .defaults import MAX_TREE_DEPTH
 
 
 class Optimizer(AutoCatTrain):
-    def __init__(self, X, y, hist_weights=None, bins=None, reference_lib=None):
+    def __init__(
+        self, X, y, hist_weights=None, bins=None, reference_lib=None, featurizer=None
+    ):
         AutoCatTrain.__init__(self)
         self.X = X
         self.y = y
         self.hist_weights = hist_weights
         self.bins = bins
-        self.train_params(self.y)
+        self.training_params = self.train_params(self.y)
         self.reference_lib = reference_lib
+        if featurizer is not None:
+            self.featurizer = featurizer
 
     def param_search(self, time_budget=3600):
-        print("Starting hyperparameter time trial for 20s")
-        t1 = perf_counter()
+        print("Starting hyperparameter time trial for up to 20s")
         study_time_check = optuna.create_study(
-            sampler=TPESampler(), direction="minimize"
+            study_name="Time trial", sampler=TPESampler(), direction="minimize"
         )
+        t1 = perf_counter()
         study_time_check.optimize(self.objective, n_trials=1, timeout=20)
         t2 = perf_counter()
 
@@ -41,9 +45,9 @@ class Optimizer(AutoCatTrain):
             self.study = optuna.create_study(sampler=TPESampler(), direction="minimize")
 
         self.study.optimize(self.objective, n_trials=500, timeout=time_budget)
-        self.trial = self.study.best_trial.params
-        print("Best trial parameters:", self.trial)
-        return self.trial
+        trial = self.study.best_trial.params
+        print("Best trial parameters:", trial)
+        return trial
 
     def objective(self, trial):
         X_train, X_test, y_train, y_test = train_test_split(
@@ -65,7 +69,8 @@ class Optimizer(AutoCatTrain):
                 {
                     "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 2, 20),
                     "l2_leaf_reg": trial.suggest_loguniform("l2_leaf_reg", 1e-2, 1e0),
-                    "one_hot_max_size": trial.suggest_int("one_hot_max_size", 2, 20),
+                    "one_hot_max_size": trial.suggest_int("one_hot_max_size", 2, 20)
+                    # "border_count": 32
                 }
             )
             if self.reference_lib is None:
