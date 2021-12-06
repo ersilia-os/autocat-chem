@@ -79,9 +79,9 @@ class AutoCatFitter(AutoCatTrain):
             pass  # Flush log file for new training run
 
         if self.do_batching:
-            models = []
             for i in range(self.batch_iter):
                 seed = random.randint(0, 10000)
+                models = []
                 for f in range(self.data_len // self.batch_size):
                     print(
                         "Training final model on fold", int(f), "and iteration", int(i)
@@ -92,26 +92,33 @@ class AutoCatFitter(AutoCatTrain):
                     )
                     y = self.scaler.scale_data(targets)
 
-                    init_model = retrain
-                    if i > 0:
-                        init_model = "temp.cbm"
-                    # if i > 0 then try load model and call fit()?
-                    # Or check baseline load/set??? skeptical
-                    models.append(
-                        self.fit_model(X, y, init_model=init_model, seed=seed)
-                    )
+                    if i == 0:
+                        init_model = retrain
+                        models.append(
+                            self.fit_model(X, y, init_model=init_model, seed=seed)
+                        )
 
-                model_avg = sum_models(
-                    models, weights=[1.0 / len(models)] * len(models)
-                )
+                    elif i > 0:
+                        init_model = "temp.cbm"
+                        self.model = self.fit_model(
+                            X, y, init_model=init_model, seed=seed
+                        )
+                        self.save_model("temp.cbm", "cbm")
+
+                if i == 0:
+                    model_avg = sum_models(
+                        models, weights=[1.0 / len(models)] * len(models)
+                    )
+                    self.model = model_avg
+                    del models
+                    self.save_model("temp.cbm", "cbm")
+
                 X_train, X_test, y_train, y_test = train_test_split(
                     X, y, test_size=0.2, random_state=seed
                 )
                 self.metrics = self.model_metrics(
                     model_avg, X_train, X_test, y_train, y_test
                 )
-                self.model = model_avg
-                self.save_model("temp.cbm", "cbm")
 
                 if i != self.batch_iter - 1:
                     self.save_model("chkpt_iteration_" + str(i) + ".cbm", "cbm")

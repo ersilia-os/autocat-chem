@@ -37,7 +37,7 @@ class Optimizer(AutoCatTrain):
             self.study = optuna.create_study(
                 sampler=MOTPESampler(), direction="minimize"
             )  # Multiobjective sampler
-        elif time_budget / (t2 - t1) > 150:
+        elif time_budget / (t2 - t1) > 50:
             self.study = optuna.create_study(
                 sampler=CmaEsSampler(), direction="minimize"
             )
@@ -63,27 +63,21 @@ class Optimizer(AutoCatTrain):
             dtest = Pool(X_test, label=y_test)
         trial_params = self.training_params
 
-        tree_depth = 7
         if self.device == "GPU":
+            # Optimize additional hyperparameters if on GPU
             trial_params.update(
                 {
                     "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 2, 20),
                     "l2_leaf_reg": trial.suggest_loguniform("l2_leaf_reg", 1e-2, 1e0),
-                    "one_hot_max_size": trial.suggest_int("one_hot_max_size", 2, 20)
-                    # "border_count": 32
                 }
             )
-            if self.reference_lib is None:
-                tree_depth = MAX_TREE_DEPTH
-
         else:
             trial_params.update({"iterations": 100})
-            tree_depth = MAX_TREE_DEPTH
 
         trial_params.update(
             {
                 "learning_rate": trial.suggest_loguniform("learning_rate", 1e-1, 1e0),
-                "depth": trial.suggest_int("depth", 4, tree_depth),
+                "depth": trial.suggest_int("depth", 8, MAX_TREE_DEPTH),
             }
         )
 
