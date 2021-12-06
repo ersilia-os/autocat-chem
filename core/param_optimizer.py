@@ -24,20 +24,21 @@ class Optimizer(AutoCatTrain):
             self.featurizer = featurizer
 
     def param_search(self, time_budget=3600):
-        print("Starting hyperparameter time trial for up to 20s")
+        print("Starting hyperparameter time trial.")
         study_time_check = optuna.create_study(
             study_name="Time trial", sampler=TPESampler(), direction="minimize"
         )
         t1 = perf_counter()
         study_time_check.optimize(self.objective, n_trials=1, timeout=20)
         t2 = perf_counter()
+        print("Estimated number of trials:", round(time_budget / (t2 - t1)))
 
         print("Starting hyperparameter search for", time_budget, "seconds.")
         if self.y.shape[1] > 1:
             self.study = optuna.create_study(
                 sampler=MOTPESampler(), direction="minimize"
             )  # Multiobjective sampler
-        elif time_budget / (t2 - t1) > 50:
+        elif time_budget / (t2 - t1) > 120:
             self.study = optuna.create_study(
                 sampler=CmaEsSampler(), direction="minimize"
             )
@@ -63,6 +64,7 @@ class Optimizer(AutoCatTrain):
             dtest = Pool(X_test, label=y_test)
         trial_params = self.training_params
 
+        tree_depth = MAX_TREE_DEPTH
         if self.device == "GPU":
             # Optimize additional hyperparameters if on GPU
             trial_params.update(
@@ -71,13 +73,15 @@ class Optimizer(AutoCatTrain):
                     "l2_leaf_reg": trial.suggest_loguniform("l2_leaf_reg", 1e-2, 1e0),
                 }
             )
+            if self.reference_lib is not None:
+                tree_depth = 11
         else:
             trial_params.update({"iterations": 100})
 
         trial_params.update(
             {
                 "learning_rate": trial.suggest_loguniform("learning_rate", 1e-1, 1e0),
-                "depth": trial.suggest_int("depth", 8, MAX_TREE_DEPTH),
+                "depth": trial.suggest_int("depth", 8, tree_depth),
             }
         )
 

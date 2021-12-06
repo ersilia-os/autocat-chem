@@ -92,32 +92,36 @@ class AutoCatFitter(AutoCatTrain):
                     )
                     y = self.scaler.scale_data(targets)
 
-                    if i == 0:
-                        init_model = retrain
+                    if i == 0 and retrain is None:  #Initial learning step
                         models.append(
-                            self.fit_model(X, y, init_model=init_model, seed=seed)
+                            self.fit_model(X, y, seed=seed)
                         )
 
-                    elif i > 0:
-                        init_model = "temp.cbm"
-                        self.model = self.fit_model(
-                            X, y, init_model=init_model, seed=seed
-                        )
-                        self.save_model("temp.cbm", "cbm")
+                    else:   #Incremental learning step
+                        if retrain is not None:
+                            retrain_model = CatBoostRegressor()
+                            retrain_model.load_model(retrain)
+                            self.model = retrain_model
+                        else:
+                            retrain_model = self.model
 
-                if i == 0:
+                        incr_model = self.fit_model(
+                            X, y, baseline_model=retrain_model, seed=seed
+                        )
+                        self.model = sum_models([self.model, incr_model])
+
+                if i == 0 and retrain is None:
                     model_avg = sum_models(
                         models, weights=[1.0 / len(models)] * len(models)
                     )
                     self.model = model_avg
                     del models
-                    self.save_model("temp.cbm", "cbm")
 
                 X_train, X_test, y_train, y_test = train_test_split(
                     X, y, test_size=0.2, random_state=seed
                 )
                 self.metrics = self.model_metrics(
-                    model_avg, X_train, X_test, y_train, y_test
+                    self.model, X_train, X_test, y_train, y_test
                 )
 
                 if i != self.batch_iter - 1:
@@ -125,7 +129,6 @@ class AutoCatFitter(AutoCatTrain):
                     self.save_metrics("chkpt_iteration" + str(i) + "_metrics.json")
                     self.scaler.save("chkpt_iteration" + str(i) + "_scaler.json")
 
-            os.remove("temp.cbm")
             return self.metrics
 
         else:
@@ -143,7 +146,7 @@ class AutoCatFitter(AutoCatTrain):
             )
 
     def fit_model(
-        self, X, y, init_model=None, log_path="", seed=random.randint(0, 10000)
+        self, X, y, baseline_model=None, log_path="", seed=random.randint(0, 10000)
     ):
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=seed
@@ -166,7 +169,13 @@ class AutoCatFitter(AutoCatTrain):
         if log_path == "":
             log_path = LOG_PATH
 
-        if init_model is not None:
+        init_model = None
+        if baseline_model is not None and y.shape[1] == 1: #set_baseline only supports single task
+            dtrain.set_baseline(baseline_model.predict(X_train))
+            dtest.set_baseline(baseline_model.predict(X_test))
+        elif baseline_model is not None:
+            baseline_model.save_model("temp.cbm", format="cbm")
+            init_model = "temp.cbm"
             params["task_type"] = "CPU"
 
         model = CatBoostRegressor(**params)
@@ -176,7 +185,7 @@ class AutoCatFitter(AutoCatTrain):
                 eval_set=dtest,
                 early_stopping_rounds=100,
                 log_cout=f,
-                init_model=init_model,
+                init_model=init_model
             )
         return model
 

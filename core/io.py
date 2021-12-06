@@ -83,11 +83,12 @@ class AutoCat(object):
             self.predictor.load_cbm(file_path)
         self.scaler.load(file_name[0] + "_scaler.json")
 
+    # TO DO save and load training params
     def retrain(self, model_path, data):
         file_name = model_path.split(".")
         self.scaler.load(file_name[0] + "_scaler.json")
         smiles, targets = self.check_input(data)
-        training_params = AutoCatTrain.train_params(targets)
+        training_params = AutoCatTrain().train_params(targets)
 
         if self.data_r == "" or self.data_len <= self.batch_size:
             self.fitter = AutoCatFitter(
